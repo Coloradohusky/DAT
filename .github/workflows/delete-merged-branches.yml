@@ -1,0 +1,39 @@
+name: Delete merged branches from fork
+
+on:
+  schedule:
+    - cron: '0 2 * * 0'  # every Sunday at 2 AM UTC
+  workflow_dispatch:      # allows manual trigger via the Actions tab
+
+jobs:
+  clean-up:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install jq and GitHub CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+          sudo apt-get install -y gh
+
+      - name: Delete merged branches from fork
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          UPSTREAM_REPO: PureDOS/DAT
+          FORK_REPO: Coloradohusky/DAT
+          FORK_OWNER: Coloradohusky
+        run: |
+          echo "Fetching merged PRs from $UPSTREAM_REPO..."
+          gh pr list --repo "$UPSTREAM_REPO" --state merged --json headRefName,headRepositoryOwner \
+          | jq -r --arg FORK_OWNER "$FORK_OWNER" '.[] | select(.headRepositoryOwner.login == $FORK_OWNER) | .headRefName' \
+          | while read branch; do
+              if [ -n "$branch" ]; then
+                echo "Deleting branch $branch from $FORK_REPO..."
+                gh api -X DELETE "repos/$FORK_REPO/git/refs/heads/$branch" || true
+              fi
+            done
